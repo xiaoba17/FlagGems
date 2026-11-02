@@ -1222,3 +1222,11 @@ def mm_out(a, b, *, out):
     if nt_mm_scenario(a, b, c, M, N, K):
         return general_mm_nt(a, b, c, M, N, K)
     return general_mm(a, b, c, M, N, K)
+
+
+# Append the opt-in hook after existing definitions so unchanged Triton kernels
+# retain their source positions (MetaX Triton includes these in its cache keys).
+if os.environ.get("FLAGGEMS_METAX_SPLITK_FP32_ACCUM", "0") == "1":
+    from ._splitk_fp32 import promote_splitk_accumulation
+
+    splitk_mm = promote_splitk_accumulation(splitk_mm)
