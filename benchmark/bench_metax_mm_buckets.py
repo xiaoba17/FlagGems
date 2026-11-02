@@ -8,12 +8,13 @@ import statistics
 import time
 from pathlib import Path
 
-import flag_gems
 import torch
+
+import flag_gems
 from flag_gems.utils.libentry import LibTuner
 
 
-def main(output, start_index=0):
+def main(output, start_index=0, small_prefill=False):
     module = importlib.import_module("flag_gems.runtime.backend._metax.ops.mm")
     report = {
         "bucket_enabled": module._BUCKET_MM_NT_M,
@@ -21,11 +22,17 @@ def main(output, start_index=0):
         "module": module.__file__,
         "cases": [],
         "tuner_events": [],
+        "small_prefill_probe": small_prefill,
+        "small_bucket_enabled": importlib.import_module(
+            "flag_gems.runtime.backend._metax.ops._mm_tuning_policy"
+        )._SMALL_PREFILL_BUCKETS,
+        "complete": False,
     }
     if start_index:
         report = json.loads(output.read_text())
         assert len(report["cases"]) == start_index
         assert report["bucket_enabled"] == module._BUCKET_MM_NT_M
+        assert report["small_prefill_probe"] == small_prefill
     original = LibTuner.run
 
     def observed(self, *args, **kwargs):
@@ -47,12 +54,40 @@ def main(output, start_index=0):
     shapes = [
         (m, n, k, torch.bfloat16, True)
         for n, k in [(2560, 2048), (2048, 2048), (12288, 2048), (2048, 6144)]
-        for m in (2007, 2008, 2009)
+        for m in (
+            (523, 524, 541, 542, 543, 544, 545, 546)
+            if small_prefill
+            else (2007, 2008, 2009)
+        )
     ]
     shapes += [
         (m, 96, 65, dtype, False)
         for dtype in (torch.bfloat16, torch.float16, torch.float32)
-        for m in (1, 31, 1023, 1024, 1025, 2016, 2017, 2047, 2048, 2049)
+        for m in (
+            (
+                64,
+                65,
+                95,
+                96,
+                97,
+                540,
+                541,
+                544,
+                545,
+                992,
+                993,
+                1023,
+                1024,
+                1025,
+                2016,
+                2017,
+                2047,
+                2048,
+                2049,
+            )
+            if small_prefill
+            else (1, 31, 1023, 1024, 1025, 2016, 2017, 2047, 2048, 2049)
+        )
     ]
     shapes += [
         (m, 2560, 2048, torch.bfloat16, False) for m in (2016, 2017, 2047, 2048, 2049)
@@ -113,11 +148,14 @@ def main(output, start_index=0):
             print(json.dumps(row), flush=True)
     finally:
         LibTuner.run = original
+    report["complete"] = True
+    output.write_text(json.dumps(report, indent=2) + "\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("--start-index", type=int, default=0)
+    parser.add_argument("--small-prefill", action="store_true")
     args = parser.parse_args()
-    main(args.output, args.start_index)
+    main(args.output, args.start_index, args.small_prefill)
