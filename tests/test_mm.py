@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import random
 
 import numpy as np
@@ -51,6 +52,35 @@ MK_SHAPES = (
         (5333, 71),
     ]
 )
+
+
+@pytest.mark.skipif(flag_gems.vendor_name != "metax", reason="MetaX tuning policy")
+def test_metax_mm_nt_bucket_key_boundaries():
+    module = importlib.import_module("flag_gems.runtime.backend._metax.ops.mm")
+    key = module._mm_nt_m_tuning_key
+    assert [key(m) for m in (1, 31, 1023)] == [1, 31, 1023]
+    assert key(1024) == -1024
+    assert key(1025) == key(1056) == -1056
+    assert key(2007) == key(2008) == key(2009) == key(2016) == -2016
+    assert key(2017) == key(2048) == -2048
+    assert key(2049) == -2080
+
+
+@pytest.mark.mm
+@pytest.mark.skipif(flag_gems.vendor_name != "metax", reason="MetaX mixed prefill")
+@pytest.mark.parametrize("M", [1023, 1024, 1025, 2016, 2017, 2047, 2048, 2049])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_metax_mm_nt_bucket_masking(M, dtype):
+    # Also run this with FLAGGEMS_METAX_MM_BUCKET_M=1 in a fresh process.
+    # K and N tails ensure config reuse does not reuse launch-time masks.
+    a = torch.randn((M, 65), device=flag_gems.device, dtype=dtype)
+    b = torch.randn((96, 65), device=flag_gems.device, dtype=dtype).t()
+    reference = torch.mm(utils.to_reference(a, True), utils.to_reference(b, True))
+    with flag_gems.use_gems(include=["mm"]):
+        result = torch.mm(a, b)
+    utils.gems_assert_close(
+        result, reference, dtype, reduce_dim=65, atol=_mm_atol_base()
+    )
 
 
 def _mm_atol_base():

@@ -32,6 +32,22 @@ EXPAND_CONFIG_FILENAME = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "mm_metax_expand.yaml")
 )
 
+# Opt-in until mixed-prefill correctness and steady-state performance are
+# validated. Read at import: LibEntry's in-process dispatch cache must not be
+# switched between tuning policies after kernels have been launched.
+_BUCKET_MM_NT_M = os.environ.get("FLAGGEMS_METAX_MM_BUCKET_M", "0") == "1"
+
+
+def _mm_nt_m_tuning_key(m):
+    """Share a selected config, not the actual M or its masking heuristics.
+
+    Small/decode shapes retain their exact keys. Large shapes share groups of
+    at most 32 rows, without crossing the M=1024 config-pruning boundary.
+    Negative keys isolate this policy from existing exact positive-M configs;
+    BenchmarkCache continues to record measurements at their exact raw shape.
+    """
+    return m if m < 1024 else -((m + 31) // 32) * 32
+
 
 def _prune_mm_dense_configs(configs, named_args, transposed_b=False, **kwargs):
     configs = list(configs)
@@ -330,6 +346,9 @@ def mm_kernel_nn(
 @libtuner(
     configs=runtime.get_tuned_config("mm_nt"),
     key=["M", "N", "K"],
+    strategy=[_mm_nt_m_tuning_key, "default", "default"]
+    if _BUCKET_MM_NT_M
+    else "default",
     prune_configs_by={"early_config_prune": _prune_mm_dense_configs_nt},
     flagtune_op_name="mm",
     flagtune_expand_op_name="mm_nt",
