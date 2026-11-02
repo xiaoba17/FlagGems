@@ -41,12 +41,12 @@ _BUCKET_MM_NT_M = os.environ.get("FLAGGEMS_METAX_MM_BUCKET_M", "0") == "1"
 def _mm_nt_m_tuning_key(m):
     """Share a selected config, not the actual M or its masking heuristics.
 
-    Small/decode shapes retain their exact keys. Large shapes share groups of
-    at most 32 rows, without crossing the M=1024 config-pruning boundary.
+    Decode M<=64 stays exact. Optional small Prefill and existing large groups
+    share at most 32 rows, without crossing the M=1024 config-pruning boundary.
     Negative keys isolate this policy from existing exact positive-M configs;
     BenchmarkCache continues to record measurements at their exact raw shape.
     """
-    return m if m < 1024 else -((m + 31) // 32) * 32
+    return _prefill_m_tuning_key(m)
 
 
 def _prune_mm_dense_configs(configs, named_args, transposed_b=False, **kwargs):
@@ -353,7 +353,7 @@ def mm_kernel_nn(
     flagtune_op_name="mm",
     flagtune_expand_op_name="mm_nt",
     flagtune_yaml_path=EXPAND_CONFIG_FILENAME,
-)
+)  # fmt: skip
 @triton.heuristics(runtime.get_heuristic_config("mm"))
 @triton.heuristics(
     {
@@ -1241,3 +1241,8 @@ def mm_out(a, b, *, out):
     if nt_mm_scenario(a, b, c, M, N, K):
         return general_mm_nt(a, b, c, M, N, K)
     return general_mm(a, b, c, M, N, K)
+
+
+# Append after kernels to preserve MetaX Triton's source-line cache identity.
+# The tuning strategy calls this only after the module finishes importing.
+from ._mm_tuning_policy import mm_nt_m_tuning_key as _prefill_m_tuning_key  # noqa: E402

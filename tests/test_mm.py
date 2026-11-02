@@ -58,7 +58,16 @@ MK_SHAPES = (
 def test_metax_mm_nt_bucket_key_boundaries():
     module = importlib.import_module("flag_gems.runtime.backend._metax.ops.mm")
     key = module._mm_nt_m_tuning_key
-    assert [key(m) for m in (1, 31, 1023)] == [1, 31, 1023]
+    assert [key(m) for m in (1, 31, 64)] == [1, 31, 64]
+    policy = importlib.import_module(
+        "flag_gems.runtime.backend._metax.ops._mm_tuning_policy"
+    )
+    if policy._SMALL_PREFILL_BUCKETS:
+        assert key(65) == key(96)
+        assert key(541) == key(544) != key(545)
+        assert key(1023) != key(1024)
+    else:
+        assert key(65) == 65 and key(541) == 541 and key(1023) == 1023
     assert key(1024) == -1024
     assert key(1025) == key(1056) == -1056
     assert key(2007) == key(2008) == key(2009) == key(2016) == -2016
@@ -68,7 +77,30 @@ def test_metax_mm_nt_bucket_key_boundaries():
 
 @pytest.mark.mm
 @pytest.mark.skipif(flag_gems.vendor_name != "metax", reason="MetaX mixed prefill")
-@pytest.mark.parametrize("M", [1023, 1024, 1025, 2016, 2017, 2047, 2048, 2049])
+@pytest.mark.parametrize(
+    "M",
+    [
+        64,
+        65,
+        95,
+        96,
+        97,
+        540,
+        541,
+        544,
+        545,
+        992,
+        993,
+        1023,
+        1024,
+        1025,
+        2016,
+        2017,
+        2047,
+        2048,
+        2049,
+    ],
+)
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
 def test_metax_mm_nt_bucket_masking(M, dtype):
     # Also run this with FLAGGEMS_METAX_MM_BUCKET_M=1 in a fresh process.
