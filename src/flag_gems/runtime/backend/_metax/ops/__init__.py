@@ -49,6 +49,7 @@ from .ones_like import ones_like
 from .outer import outer
 from .polar import polar
 from .prod import prod, prod_dim
+from .radix_sort import radix_sort_rows
 from .renorm import renorm, renorm_
 from .repeat import repeat
 from .repeat_interleave import repeat_interleave_self_tensor
@@ -144,6 +145,7 @@ __all__ = [
     "polar",
     "prod",
     "prod_dim",
+    "radix_sort_rows",
     "renorm",
     "renorm_",
     "repeat",
